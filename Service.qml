@@ -43,7 +43,16 @@ Item {
   }
 
   function saveDismissed() {
-    dismissedFile.setText(JSON.stringify(Object.keys(root.dismissed)) + "\n")
+    mkdirProcess.running = true
+  }
+
+  Process {
+    id: mkdirProcess
+    command: ["mkdir", "-p", root.dataDir]
+    onExited: {
+      if (exitCode === 0)
+        dismissedFile.setText(JSON.stringify(Object.keys(root.dismissed)) + "\n")
+    }
   }
 
   /** Removes an item from the line without touching the file on disk. */
@@ -97,15 +106,15 @@ Item {
   // argv entry, never interpolated into a command string.
   function scanDir(dir) {
     if (!dir) return
-    scanProcess.pending = (scanProcess.pending || 0) + 1
-    scanProcess.command = ["find", dir, "-maxdepth", "1", "-type", "f",
+    var process = dir === root.screenshotDir ? screenshotScanProcess : recordingScanProcess
+    process.command = ["find", dir, "-maxdepth", "1", "-type", "f",
       "-printf", "%T@ %p\\n"]
-    scanProcess.collected = []
-    scanProcess.running = true
+    process.collected = []
+    process.running = true
   }
 
   Process {
-    id: scanProcess
+    id: screenshotScanProcess
     property var collected: []
     stdout: SplitParser {
       onRead: function(line) {
@@ -118,10 +127,30 @@ Item {
         var name = path.slice(path.lastIndexOf("/") + 1)
         var kind = root.kindFor(name)
         if (!kind || root.isDismissed(path)) return
-        scanProcess.collected.push({ path: path, name: name, kind: kind, mtime: mtime })
+        screenshotScanProcess.collected.push({ path: path, name: name, kind: kind, mtime: mtime })
       }
     }
-    onExited: root.mergeScan(scanProcess.collected)
+    onExited: root.mergeScan(screenshotScanProcess.collected)
+  }
+
+  Process {
+    id: recordingScanProcess
+    property var collected: []
+    stdout: SplitParser {
+      onRead: function(line) {
+        var text = String(line || "")
+        var spaceIndex = text.indexOf(" ")
+        if (spaceIndex < 0) return
+        var mtime = Number(text.slice(0, spaceIndex))
+        var path = text.slice(spaceIndex + 1)
+        if (!isFinite(mtime) || !path) return
+        var name = path.slice(path.lastIndexOf("/") + 1)
+        var kind = root.kindFor(name)
+        if (!kind || root.isDismissed(path)) return
+        recordingScanProcess.collected.push({ path: path, name: name, kind: kind, mtime: mtime })
+      }
+    }
+    onExited: root.mergeScan(recordingScanProcess.collected)
   }
 
   function mergeScan(found) {
