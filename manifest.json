@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.ayandexyz.clothesline",
+  "name": "Clothesline",
+  "version": "0.1.0",
+  "author": "Ayan De",
+  "license": "MIT",
+  "description": "Screenshots and recordings hang on a line that drops from the bar. Click to copy, drag to keep or trash.",
+  "kinds": [
+    "service",
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "service": "Service.qml",
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Clothesline",
+    "description": "Screenshots and recordings hang on a line that drops from the bar. Click to copy, drag to keep or trash.",
+    "category": "Media",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {},
+    "schema": []
+  }
+}
