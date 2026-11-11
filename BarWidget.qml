@@ -1,10 +1,12 @@
 import QtQuick
+import Quickshell
 import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
 
-// Bar entry point: a small picture glyph with a count badge. Click opens the
-// line (Panel.qml, which hosts the hanging-item strip).
+// Bar entry point: a small picture glyph with a count badge. Click holds the
+// line (Line.qml, hung by Service.qml) down under this bar until a click lands
+// elsewhere.
 BarWidget {
   id: root
   moduleName: "io.github.ayandexyz.clothesline"
@@ -13,8 +15,12 @@ BarWidget {
 
   readonly property int count: service ? service.count : 0
 
-  readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
-  readonly property bool popoutSwitchClosing: panelLoader.item ? panelLoader.item.popoutSwitchClosing === true : false
+  // The screen this bar sits on, which is the line the button holds down.
+  readonly property string screenName: {
+    var window = button.QsWindow.window
+    return window && window.screen ? String(window.screen.name) : ""
+  }
+  readonly property bool opened: !!service && service.heldScreen !== "" && service.heldScreen === root.screenName
 
   function findService() {
     var found = null
@@ -22,40 +28,23 @@ BarWidget {
       found = root.bar.shell.serviceFor(root.moduleName)
     else if (root.shell && typeof root.shell.serviceFor === "function")
       found = root.shell.serviceFor(root.moduleName)
-    if (found && found !== root.service) {
-      root.service = found
-      root.injectPanel()
-    }
+    if (found && found !== root.service) root.service = found
   }
 
   function open() {
-    if (panelLoader.item) panelLoader.item.open()
+    if (root.service) root.service.holdLine(root.screenName)
   }
 
   function close() {
-    if (panelLoader.item) panelLoader.item.close()
+    if (root.service && root.opened) root.service.releaseLine()
   }
 
   function toggle() {
-    if (panelLoader.item) panelLoader.item.toggle()
-  }
-
-  function closeForPopoutSwitch() {
-    if (panelLoader.item) panelLoader.item.closeForPopoutSwitch()
-  }
-
-  function injectPanel() {
-    if (!panelLoader.item) return
-    panelLoader.item.bar = root.bar
-    panelLoader.item.anchorItem = button
-    panelLoader.item.hostWidget = root
-    panelLoader.item.service = root.service
+    if (root.service) root.service.toggleLine(root.screenName)
   }
 
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
-
-  onBarChanged: injectPanel()
 
   Timer {
     interval: 1000
@@ -63,17 +52,6 @@ BarWidget {
     running: root.service === null
     triggeredOnStart: true
     onTriggered: root.findService()
-  }
-
-  Loader {
-    id: panelLoader
-    active: true
-    source: Qt.resolvedUrl("Panel.qml")
-    visible: false
-    onLoaded: {
-      root.injectPanel()
-      Qt.callLater(root.injectPanel)
-    }
   }
 
   WidgetButton {

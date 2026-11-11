@@ -4,6 +4,12 @@
 
 Screenshots and recordings hang on a line that drops from the bar. Click to copy, drag to keep or trash.
 
+The line is strung across the top of the screen, right under the bar. Rest the
+pointer just under the middle of the bar and it drops down; move away and it
+tucks back up. Clicking the bar widget holds it down until you click elsewhere.
+On the line: click an item to copy it, double-click to open it, right-click for
+Annotate / Reveal in files / Delete, and the × takes it off the line.
+
 Kinds: service, bar-widget
 
 ## GitHub topics

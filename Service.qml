@@ -6,8 +6,8 @@ import qs.Commons
 // Headless singleton owned by the Omarchy shell. Watches the screenshot and
 // screen-recording output directories, keeps a "line" of the most recent
 // captures (newest last, like laundry pinned up as it comes out of the
-// basket), and lets the bar widget (BarWidget.qml, which hosts the popout)
-// read and act on it. Keep this as an Item: a file named Service.qml cannot
+// basket), and lets the bar widget (BarWidget.qml) read and act on it. It also hangs the line itself (Line.qml) across the
+// top of every screen. Keep this as an Item: a file named Service.qml cannot
 // instantiate Service or it recursively instantiates itself.
 Item {
   id: root
@@ -37,6 +37,80 @@ Item {
   /** Newest last: { path, name, kind: "image"|"video", mtime (epoch seconds) }. */
   property var items: []
   readonly property int count: items.length
+
+  // The screen whose line the bar widget is holding down, or "" when every
+  // line is left to drop on hover alone.
+  property string heldScreen: ""
+  // Clicking the bar button to close a held line first lets the line's focus
+  // grab go (the click landed outside it), then presses the button; without
+  // this, that press would hold the line straight back down.
+  property real releasedAt: 0
+
+  function toggleLine(screenName) {
+    var name = String(screenName || "")
+    if (root.heldScreen === "" && Date.now() - root.releasedAt < 300) return
+    root.heldScreen = root.heldScreen === name ? "" : name
+  }
+
+  function holdLine(screenName) {
+    root.heldScreen = String(screenName || "")
+  }
+
+  function releaseLine() {
+    if (root.heldScreen !== "") root.releasedAt = Date.now()
+    root.heldScreen = ""
+  }
+
+  Variants {
+    model: Quickshell.screens
+
+    Line {
+      required property var modelData
+      screen: modelData
+      service: root
+    }
+  }
+
+  // --- item actions ----------------------------------------------------------
+
+  // Copies the file itself to the clipboard (not its path) so pasting into
+  // chat apps, editors, etc. pastes the image/video, matching what copying
+  // straight out of the capture preview would do.
+  function copyToClipboard(item) {
+    if (!item) return
+    copyProcess.run(item.path, item.kind)
+  }
+
+  function openExternally(item) {
+    if (!item) return
+    Util.execArgv(["xdg-open", item.path])
+  }
+
+  function annotate(item) {
+    if (!item || item.kind !== "image") return
+    Util.execArgv(["omasnap", "--file", item.path])
+  }
+
+  function revealInFiles(item) {
+    if (!item) return
+    var dirPath = item.path.slice(0, item.path.lastIndexOf("/")) || "/"
+    Util.execArgv(["xdg-open", dirPath])
+  }
+
+  Process {
+    id: copyProcess
+    function run(path, kind) {
+      var mime = kind === "video" ? "video/mp4" : "image/png"
+      // cat | wl-copy keeps the clipboard entry a real file payload (so
+      // pasting elsewhere gets the image/video, not a path string), without
+      // interpolating the path into a shell string: it only ever reaches
+      // argv, both for cat and for the mime type.
+      copyProcess.command = ["sh", "-c", "exec cat -- \"$1\" | wl-copy --type \"$2\"", "sh", path, mime]
+      copyProcess.running = true
+    }
+  }
+
+  // --- the line's contents ---------------------------------------------------
 
   function isDismissed(path) {
     return root.dismissed[path] === true
