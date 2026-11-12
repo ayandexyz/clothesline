@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "author": "Ayan De",
   "license": "MIT",
-  "description": "Screenshots, recordings and what you copy hang on a line that drops from the bar. Click to copy.",
+  "description": "Your clipboard history hangs on a line that drops from the bar. Click to copy.",
   "kinds": [
     "service",
     "bar-widget"
@@ -16,7 +16,7 @@
   },
   "barWidget": {
     "displayName": "Clothesline",
-    "description": "Screenshots, recordings and what you copy hang on a line that drops from the bar. Click to copy.",
+    "description": "Your clipboard history hangs on a line that drops from the bar. Click to copy.",
     "category": "Media",
     "allowMultiple": false,
     "defaultSection": "right",

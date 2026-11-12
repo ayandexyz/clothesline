@@ -3,32 +3,24 @@ import Quickshell
 import Quickshell.Io
 import qs.Commons
 
-// Headless singleton owned by the Omarchy shell. Watches the screenshot and
-// screen-recording output directories and Omarchy's clipboard history, keeps
-// a "line" of the most recent captures and copies (newest last, like laundry
-// pinned up as it comes out of the basket), and lets the bar widget
-// (BarWidget.qml) read and act on it. It also hangs the line itself
-// (Line.qml) across the top of every screen. Keep this as an Item: a file
+// Headless singleton owned by the Omarchy shell. Reads Omarchy's clipboard
+// history — the same file and the same entries Super+Ctrl+V shows — and
+// keeps a "line" of the most recent copies (newest last, like laundry pinned
+// up as it comes out of the basket) for the bar widget (BarWidget.qml) to
+// read and act on. It also hangs the line itself (Line.qml) across the top
+// of every screen. It is a second, bar-drop-down view onto Omarchy's own
+// clipboard history, not a separate store. Keep this as an Item: a file
 // named Service.qml cannot instantiate Service or it recursively instantiates
 // itself.
 Item {
   id: root
 
   readonly property string homeDir: Quickshell.env("HOME") || ""
-  readonly property string picturesDir: Quickshell.env("XDG_PICTURES_DIR") || (root.homeDir + "/Pictures")
-  readonly property string videosDir: Quickshell.env("XDG_VIDEOS_DIR") || (root.homeDir + "/Videos")
-  // Matches the env vars Omarchy's own capture scripts honor (see
-  // omarchy-capture-screenshot / omarchy-capture-screenrecording), so the
-  // line watches wherever captures are actually landing.
-  readonly property string screenshotDir: Quickshell.env("OMASNAP_SCREENSHOT_DIR")
-    || Quickshell.env("OMARCHY_SCREENSHOT_DIR")
-    || (root.picturesDir + "/Screenshots")
-  readonly property string recordingDir: Quickshell.env("OMARCHY_SCREENRECORD_DIR") || root.videosDir
 
   readonly property string dataHome: Quickshell.env("XDG_DATA_HOME") || root.homeDir + "/.local/share"
   readonly property string dataDir: dataHome + "/clothesline"
-  // Items removed from the line (but left on disk, or in the clipboard
-  // history) go here, by id, so a rescan doesn't bring one straight back.
+  // Items removed from the line (but left in the clipboard history) go
+  // here, by id, so the next history reload doesn't bring one straight back.
   property var dismissed: ({})
   property bool prefsLoaded: false
 
@@ -41,32 +33,22 @@ Item {
   readonly property string stateHome: Quickshell.env("XDG_STATE_HOME") || root.homeDir + "/.local/state"
   readonly property string clipboardHistoryPath: root.stateHome + "/omarchy/clipboard-history.json"
   // The history has no times, so each copy is stamped when the line first
-  // sees it; that is what places it among the captures.
+  // sees it; that is what places it along the line.
   property var clipboardSeen: ({})
   property bool seenLoaded: false
 
-  // Captures and copies are capped apart, so a run of copies never pushes the
-  // screenshots off; 50 copies is what Omarchy's own clipboard panel shows.
-  readonly property int maxCaptures: 24
+  // 50 copies is what Omarchy's own clipboard panel shows.
   readonly property int maxCopies: 50
-  readonly property var imageExtensions: ["png", "jpg", "jpeg", "webp", "gif", "bmp"]
-  readonly property var videoExtensions: ["mp4", "m4v", "mov", "webm", "mkv"]
 
   /**
-   * Newest last: { id, path, name, kind: "image"|"video"|"note"|"link",
-   * source: "capture"|"clipboard", mtime (epoch seconds) }. Clipboard items
-   * also carry their history entry (text, mime) as `entry`.
+   * Newest last: { id, path, name, kind: "image"|"note"|"link", mtime (epoch
+   * seconds), source: "clipboard" }. Each item also carries its history
+   * entry (text, mime) as `entry`.
    */
   property var items: []
   readonly property int count: items.length
   property string itemsSignature: ""
 
-  property var captures: []
-  // sha256 per capture path, so a clipboard image (Omarchy saves those under
-  // a content-hash filename, not the capture's own path) can be recognized
-  // as the same picture.
-  property var captureHashes: ({})
-  property string capturesHashSignature: ""
   // The newest copies, the ones that hang while nothing is searched.
   property var clips: []
   // The history as written, entries kept whole, so deleting one rewrites
@@ -110,8 +92,7 @@ Item {
   // --- item actions ----------------------------------------------------------
 
   // Copies the file itself to the clipboard (not its path) so pasting into
-  // chat apps, editors, etc. pastes the image/video, matching what copying
-  // straight out of the capture preview would do. A note or link copies its
+  // chat apps, editors, etc. pastes the image. A note or link copies its
   // text back, through the same helper Omarchy's clipboard panel uses.
   function copyToClipboard(item) {
     if (!item) return
@@ -121,7 +102,7 @@ Item {
       Util.execArgv([root.omarchyPath + "/bin/omarchy-clipboard-paste-text", "--copy-only", "--history-index", String(index)])
       return
     }
-    copyProcess.run(item.path, item.kind, item.entry ? item.entry.mime : "")
+    copyProcess.run(item.path, item.entry ? item.entry.mime : "")
   }
 
   function openExternally(item) {
@@ -140,6 +121,8 @@ Item {
     Util.execArgv(["omasnap", "--file", item.path])
   }
 
+  // item.path points into Omarchy's clipboard image cache, not a file this
+  // plugin owns, so this only opens its folder — it never writes there.
   function revealInFiles(item) {
     if (!item || !item.path) return
     var dirPath = item.path.slice(0, item.path.lastIndexOf("/")) || "/"
@@ -148,13 +131,12 @@ Item {
 
   Process {
     id: copyProcess
-    function run(path, kind, mime) {
-      if (!mime) mime = kind === "video" ? "video/mp4" : "image/png"
+    function run(path, mime) {
       // cat | wl-copy keeps the clipboard entry a real file payload (so
-      // pasting elsewhere gets the image/video, not a path string), without
+      // pasting elsewhere gets the image, not a path string), without
       // interpolating the path into a shell string: it only ever reaches
       // argv, both for cat and for the mime type.
-      copyProcess.command = ["sh", "-c", "exec cat -- \"$1\" | wl-copy --type \"$2\"", "sh", path, mime]
+      copyProcess.command = ["sh", "-c", "exec cat -- \"$1\" | wl-copy --type \"$2\"", "sh", path, mime || "image/png"]
       copyProcess.running = true
     }
   }
@@ -179,7 +161,7 @@ Item {
     }
   }
 
-  /** Removes an item from the line without touching the file on disk or the clipboard history. */
+  /** Removes an item from the line without touching the clipboard history. */
   function dismiss(id) {
     var key = String(id || "")
     if (!key || root.dismissed[key]) return
@@ -187,26 +169,17 @@ Item {
     for (var existing in root.dismissed) next[existing] = true
     next[key] = true
     root.dismissed = next
-    root.captures = root.captures.filter(function(item) { return item.id !== key })
     root.clips = root.clips.filter(function(item) { return item.id !== key })
     root.rebuild()
     root.saveDismissed()
   }
 
-  /**
-   * Lets an item go for good: a capture's file goes to the trash (so it is
-   * recoverable), a copy leaves the clipboard history.
-   */
+  /** Lets a copy go for good: it leaves Omarchy's clipboard history too. */
   function trash(item) {
     if (!item) return
-    if (item.source === "clipboard") {
-      root.removeFromHistory(item)
-      root.clips = root.clips.filter(function(clip) { return clip.id !== item.id })
-      root.rebuild()
-      return
-    }
-    trashProcess.run(item.path)
-    root.dismiss(item.id)
+    root.removeFromHistory(item)
+    root.clips = root.clips.filter(function(clip) { return clip.id !== item.id })
+    root.rebuild()
   }
 
   function clearAll() {
@@ -214,151 +187,12 @@ Item {
     for (var i = 0; i < ids.length; i++) root.dismiss(ids[i])
   }
 
-  Process {
-    id: trashProcess
-    function run(path) {
-      trashProcess.command = ["gio", "trash", "--", path]
-      trashProcess.running = true
-    }
-  }
-
-  // --- scanning --------------------------------------------------------------
-
-  function extensionOf(name) {
-    var match = /\.([A-Za-z0-9]+)$/.exec(String(name || ""))
-    return match ? match[1].toLowerCase() : ""
-  }
-
-  function kindFor(name) {
-    var ext = root.extensionOf(name)
-    if (root.imageExtensions.indexOf(ext) >= 0) return "image"
-    if (root.videoExtensions.indexOf(ext) >= 0) return "video"
-    return ""
-  }
-
-  // `find -printf` keeps parsing simple and avoids a shell having to glob
-  // untrusted directory contents; each directory is passed as a literal
-  // argv entry, never interpolated into a command string.
-  function scanDir(dir) {
-    if (!dir) return
-    var process = dir === root.screenshotDir ? screenshotScanProcess : recordingScanProcess
-    process.command = ["find", dir, "-maxdepth", "1", "-type", "f",
-      "-printf", "%T@ %p\\n"]
-    process.collected = []
-    process.running = true
-  }
-
-  Process {
-    id: screenshotScanProcess
-    property var collected: []
-    stdout: SplitParser {
-      onRead: function(line) {
-        var text = String(line || "")
-        var spaceIndex = text.indexOf(" ")
-        if (spaceIndex < 0) return
-        var mtime = Number(text.slice(0, spaceIndex))
-        var path = text.slice(spaceIndex + 1)
-        if (!isFinite(mtime) || !path) return
-        var name = path.slice(path.lastIndexOf("/") + 1)
-        var kind = root.kindFor(name)
-        if (!kind || root.isDismissed(path)) return
-        screenshotScanProcess.collected.push({ id: path, path: path, name: name, kind: kind, source: "capture", mtime: mtime })
-      }
-    }
-    onExited: root.mergeScan(screenshotScanProcess.collected)
-  }
-
-  Process {
-    id: recordingScanProcess
-    property var collected: []
-    stdout: SplitParser {
-      onRead: function(line) {
-        var text = String(line || "")
-        var spaceIndex = text.indexOf(" ")
-        if (spaceIndex < 0) return
-        var mtime = Number(text.slice(0, spaceIndex))
-        var path = text.slice(spaceIndex + 1)
-        if (!isFinite(mtime) || !path) return
-        var name = path.slice(path.lastIndexOf("/") + 1)
-        var kind = root.kindFor(name)
-        if (!kind || root.isDismissed(path)) return
-        recordingScanProcess.collected.push({ id: path, path: path, name: name, kind: kind, source: "capture", mtime: mtime })
-      }
-    }
-    onExited: root.mergeScan(recordingScanProcess.collected)
-  }
-
-  function mergeScan(found) {
-    var byPath = {}
-    for (var i = 0; i < root.captures.length; i++) byPath[root.captures[i].path] = root.captures[i]
-    for (var j = 0; j < found.length; j++) byPath[found[j].path] = found[j]
-    for (var path in byPath) if (root.isDismissed(path)) delete byPath[path]
-
-    var merged = Object.keys(byPath).map(function(key) { return byPath[key] })
-    merged.sort(function(a, b) { return a.mtime - b.mtime })
-    if (merged.length > root.maxCaptures) merged = merged.slice(merged.length - root.maxCaptures)
-    root.captures = merged
-    root.hashCaptures()
-  }
-
-  // Hashes the current screenshots so rebuild() can match them against
-  // Omarchy's content-hash-named clipboard image files. Skipped when the
-  // set of screenshots hasn't changed since the last hash.
-  function hashCaptures() {
-    var paths = []
-    for (var i = 0; i < root.captures.length; i++)
-      if (root.captures[i].kind === "image") paths.push(root.captures[i].path)
-    var signature = paths.join("\n")
-    if (signature === root.capturesHashSignature) { root.rebuild(); return }
-    root.capturesHashSignature = signature
-    if (paths.length === 0) { root.captureHashes = {}; root.rebuild(); return }
-    captureHashProcess.collected = {}
-    captureHashProcess.command = ["sha256sum"].concat(paths)
-    captureHashProcess.running = true
-  }
-
-  Process {
-    id: captureHashProcess
-    property var collected: ({})
-    stdout: SplitParser {
-      onRead: function(line) {
-        var text = String(line || "")
-        var spaceIndex = text.indexOf(" ")
-        if (spaceIndex < 0) return
-        var hash = text.slice(0, spaceIndex)
-        var path = text.slice(spaceIndex + 1).replace(/^\s+/, "")
-        if (hash && path) captureHashProcess.collected[path] = hash
-      }
-    }
-    onExited: {
-      root.captureHashes = captureHashProcess.collected
-      root.rebuild()
-    }
-  }
-
-  // Captures and copies share one line, in the order they arrived. A
-  // screenshot also lands in Omarchy's clipboard history, but saved under a
-  // content-hash filename of its own, not the capture's path — so drop
-  // clipboard images whose hash matches a capture we already show.
+  // The line is just the clipboard's copies, in the order they arrived.
   function rebuild() {
-    var capturePaths = {}
-    var captureHashSet = {}
-    for (var i = 0; i < root.captures.length; i++) {
-      capturePaths[root.captures[i].path] = true
-      var hash = root.captureHashes[root.captures[i].path]
-      if (hash) captureHashSet[hash] = true
-    }
-    var clips = root.clips.filter(function(item) {
-      if (item.kind !== "image") return true
-      if (capturePaths[item.path]) return false
-      var stem = item.path.slice(item.path.lastIndexOf("/") + 1).replace(/\.[^.]+$/, "")
-      return !captureHashSet[stem]
-    })
-    var merged = root.captures.concat(clips)
-    merged.sort(function(a, b) { return a.mtime - b.mtime })
-    // The folders are rescanned every few seconds; handing the line a new
-    // list that says the same thing would rebuild every card and lose the
-    // place it was scrolled to.
+    var merged = root.clips.slice().sort(function(a, b) { return a.mtime - b.mtime })
+    // The history file can change without actually reordering anything;
+    // handing the line a new list that says the same thing would rebuild
+    // every card and lose the place it was scrolled to.
     var signature = merged.map(function(item) { return item.id + "@" + item.mtime }).join("\n")
     if (signature === root.itemsSignature) return
     root.itemsSignature = signature
@@ -475,36 +309,6 @@ Item {
     clipboardFile.setText(JSON.stringify(next, null, 2) + "\n")
   }
 
-  function rescan() {
-    root.scanDir(root.screenshotDir)
-    root.scanDir(root.recordingDir)
-  }
-
-  Timer {
-    id: pollTimer
-    interval: 5000
-    running: true
-    repeat: true
-    triggeredOnStart: true
-    onTriggered: root.rescan()
-  }
-
-  // Watching the directories themselves means a fresh capture shows up on
-  // the line within a second or two instead of waiting for the next poll.
-  FileView {
-    path: root.screenshotDir
-    watchChanges: true
-    printErrors: false
-    onFileChanged: Qt.callLater(root.rescan)
-  }
-
-  FileView {
-    path: root.recordingDir
-    watchChanges: true
-    printErrors: false
-    onFileChanged: Qt.callLater(root.rescan)
-  }
-
   FileView {
     id: dismissedFile
     path: root.dataDir + "/dismissed.json"
@@ -519,12 +323,10 @@ Item {
         }
       } catch (_) {}
       root.prefsLoaded = true
-      root.rescan()
       root.refreshClipboard()
     }
     onLoadFailed: {
       root.prefsLoaded = true
-      root.rescan()
       root.refreshClipboard()
     }
   }

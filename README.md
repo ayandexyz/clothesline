@@ -2,17 +2,19 @@
 
 [![Built for Omarchy: Plugin](https://raw.githubusercontent.com/tcballard/omarchy-badges/75975e5b5bf75e7ede3764bcd2950046f7abfe2c/badges/v1/omarchy-plugin.svg)](https://github.com/tcballard/omarchy-badges)
 
-Screenshots, recordings and what you copy hang on a line that drops from the bar. Click to copy.
+What you copy hangs on a line that drops from the bar. Click to copy. It's a
+drop-down alternative to Omarchy's own <kbd>Super</kbd> + <kbd>Ctrl</kbd> +
+<kbd>V</kbd> clipboard panel, reading the exact same history — not a separate
+clipboard of its own.
 
 ![Clothesline dropped under the bar](preview.png)
 
 ## Features
 
-- **Captures** — every screenshot and screen recording Omarchy makes hangs on
-  the line, newest first.
-- **Clipboard** — what you copy hangs there too, read from Omarchy's own
-  clipboard history: text as a note (its first line the title), code as a code
-  card, a lone web address as a link, copied images like any screenshot.
+- **Clipboard** — everything you copy hangs on the line, read straight from
+  Omarchy's own clipboard history: text as a note (its first line the title),
+  code as a code card, a lone web address as a link, copied images as a
+  thumbnail.
 - **Drops from the bar** — rest the pointer just under the middle of the bar and
   the line drops down; move away and it tucks back up. Clicking the bar widget
   holds it down until you click elsewhere.
@@ -21,9 +23,9 @@ Screenshots, recordings and what you copy hang on a line that drops from the bar
 | Action | What it does |
 | --- | --- |
 | Click | Copy the item to the clipboard |
-| Double-click | Open it (image/video viewer, browser for links, editor for notes) |
-| Right-click | Annotate (screenshots) / Reveal in files / Delete |
-| × | Take it off the line (the file is kept) |
+| Double-click | Open it (image viewer, browser for links, editor for notes) |
+| Right-click | Annotate (images) / Reveal in files / Delete from history |
+| × | Take it off the line (stays in the clipboard history) |
 
 Copies a password manager marks as secret never reach the clipboard history, so
 they never hang.
@@ -31,9 +33,8 @@ they never hang.
 ## Requirements
 
 - Omarchy 4 with Quattro shell-plugin support.
-- `wl-clipboard` (copying an item) and `gio` (trashing an item) — both ship
-  with Omarchy by default.
-- `omasnap` for the Annotate action on screenshots (ships by default).
+- `wl-clipboard` (copying an item) — ships with Omarchy by default.
+- `omasnap` for the Annotate action on images (ships by default).
 
 No other dependencies; nothing is downloaded or built.
 
@@ -51,9 +52,9 @@ Or from a local checkout:
 omarchy plugin add "$(pwd)" --enable
 ```
 
-This enables both parts: the background service (watches captures and the
-clipboard history) and the bar widget (placed in the right section — move it
-in the bar settings if you like).
+This enables both parts: the background service (reads the clipboard history)
+and the bar widget (placed in the right section — move it in the bar settings
+if you like).
 
 ### 2. Optional: put it on <kbd>Super</kbd> + <kbd>Ctrl</kbd> + <kbd>V</kbd>
 
@@ -94,20 +95,15 @@ rm -rf "${XDG_DATA_HOME:-$HOME/.local/share}/clothesline"
 
 ## What it reads and writes
 
-The plugin watches `$XDG_PICTURES_DIR/Screenshots` (or `$OMASNAP_SCREENSHOT_DIR`
-/ `$OMARCHY_SCREENSHOT_DIR`) and `$XDG_VIDEOS_DIR` (or
-`$OMARCHY_SCREENRECORD_DIR`) — the same directories Omarchy's own capture
-commands write to — and lists their contents. It does not move, copy, or
-modify those files; Delete moves one to the trash, only when you choose it.
-
-It reads `$XDG_STATE_HOME/omarchy/clipboard-history.json`, and only writes to
-it when you choose Delete from history.
+It reads `$XDG_STATE_HOME/omarchy/clipboard-history.json` — the same file
+Omarchy's own clipboard panel reads and writes — and only writes to it when
+you choose Delete from history, which removes the entry there too.
 
 Its only state of its own is in `$XDG_DATA_HOME/clothesline/`:
 `dismissed.json` lists what was taken off the line, so dismissing an item
-doesn't bring it right back on the next scan, and `clipboard-seen.json` records
-when each copy was first seen, so copies sit among the captures in the order
-they came.
+doesn't bring it right back the next time the history reloads, and
+`clipboard-seen.json` records when each copy was first seen, so copies sit on
+the line in the order they came.
 
 No network access. No privileged commands.
 
