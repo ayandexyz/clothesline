@@ -296,9 +296,15 @@ Item {
     root.rebuild()
   }
 
-  // Captures and copies share one line, in the order they arrived.
+  // Captures and copies share one line, in the order they arrived. A
+  // screenshot also lands in Omarchy's clipboard history (the capture tool
+  // copies it), so drop clipboard images that are just a capture we already
+  // show.
   function rebuild() {
-    var merged = root.captures.concat(root.clips)
+    var capturePaths = {}
+    for (var i = 0; i < root.captures.length; i++) capturePaths[root.captures[i].path] = true
+    var clips = root.clips.filter(function(item) { return !(item.kind === "image" && capturePaths[item.path]) })
+    var merged = root.captures.concat(clips)
     merged.sort(function(a, b) { return a.mtime - b.mtime })
     // The folders are rescanned every few seconds; handing the line a new
     // list that says the same thing would rebuild every card and lose the
@@ -354,6 +360,14 @@ Item {
       var value = JSON.parse(String(raw || "[]"))
       if (Array.isArray(value)) parsed = value
     } catch (_) {}
+
+    // Omarchy moves a copy back to the front of its history when you copy
+    // it again, even if it's one already here. Rank the old history first,
+    // so a re-copy that jumped ahead of where it used to sit gets stamped
+    // fresh instead of staying pinned to when it was first seen.
+    var oldRank = {}
+    for (var o = 0; o < root.clipboardRaw.length; o++)
+      oldRank[root.clipId(root.clipboardRaw[o])] = o
     root.clipboardRaw = parsed
 
     var now = Date.now() / 1000
@@ -371,9 +385,10 @@ Item {
 
       var id = root.clipId(entry)
       if (seen[id] !== undefined) continue
-      // Unseen copies are stamped now, a hair apart so they keep the
-      // history's order among themselves.
-      seen[id] = root.clipboardSeen[id] !== undefined ? root.clipboardSeen[id] : now - i * 0.001
+      var recopied = oldRank[id] !== undefined && oldRank[id] > i
+      // Unseen (or re-copied) entries are stamped now, a hair apart so they
+      // keep the history's order among themselves.
+      seen[id] = (!recopied && root.clipboardSeen[id] !== undefined) ? root.clipboardSeen[id] : now - i * 0.001
 
       var item = {
         id: id,
