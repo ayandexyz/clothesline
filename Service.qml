@@ -62,6 +62,11 @@ Item {
   property string itemsSignature: ""
 
   property var captures: []
+  // sha256 per capture path, so a clipboard image (Omarchy saves those under
+  // a content-hash filename, not the capture's own path) can be recognized
+  // as the same picture.
+  property var captureHashes: ({})
+  property string capturesHashSignature: ""
   // The newest copies, the ones that hang while nothing is searched.
   property var clips: []
   // The history as written, entries kept whole, so deleting one rewrites
@@ -293,17 +298,62 @@ Item {
     merged.sort(function(a, b) { return a.mtime - b.mtime })
     if (merged.length > root.maxCaptures) merged = merged.slice(merged.length - root.maxCaptures)
     root.captures = merged
-    root.rebuild()
+    root.hashCaptures()
+  }
+
+  // Hashes the current screenshots so rebuild() can match them against
+  // Omarchy's content-hash-named clipboard image files. Skipped when the
+  // set of screenshots hasn't changed since the last hash.
+  function hashCaptures() {
+    var paths = []
+    for (var i = 0; i < root.captures.length; i++)
+      if (root.captures[i].kind === "image") paths.push(root.captures[i].path)
+    var signature = paths.join("\n")
+    if (signature === root.capturesHashSignature) { root.rebuild(); return }
+    root.capturesHashSignature = signature
+    if (paths.length === 0) { root.captureHashes = {}; root.rebuild(); return }
+    captureHashProcess.collected = {}
+    captureHashProcess.command = ["sha256sum"].concat(paths)
+    captureHashProcess.running = true
+  }
+
+  Process {
+    id: captureHashProcess
+    property var collected: ({})
+    stdout: SplitParser {
+      onRead: function(line) {
+        var text = String(line || "")
+        var spaceIndex = text.indexOf(" ")
+        if (spaceIndex < 0) return
+        var hash = text.slice(0, spaceIndex)
+        var path = text.slice(spaceIndex + 1).replace(/^\s+/, "")
+        if (hash && path) captureHashProcess.collected[path] = hash
+      }
+    }
+    onExited: {
+      root.captureHashes = captureHashProcess.collected
+      root.rebuild()
+    }
   }
 
   // Captures and copies share one line, in the order they arrived. A
-  // screenshot also lands in Omarchy's clipboard history (the capture tool
-  // copies it), so drop clipboard images that are just a capture we already
-  // show.
+  // screenshot also lands in Omarchy's clipboard history, but saved under a
+  // content-hash filename of its own, not the capture's path — so drop
+  // clipboard images whose hash matches a capture we already show.
   function rebuild() {
     var capturePaths = {}
-    for (var i = 0; i < root.captures.length; i++) capturePaths[root.captures[i].path] = true
-    var clips = root.clips.filter(function(item) { return !(item.kind === "image" && capturePaths[item.path]) })
+    var captureHashSet = {}
+    for (var i = 0; i < root.captures.length; i++) {
+      capturePaths[root.captures[i].path] = true
+      var hash = root.captureHashes[root.captures[i].path]
+      if (hash) captureHashSet[hash] = true
+    }
+    var clips = root.clips.filter(function(item) {
+      if (item.kind !== "image") return true
+      if (capturePaths[item.path]) return false
+      var stem = item.path.slice(item.path.lastIndexOf("/") + 1).replace(/\.[^.]+$/, "")
+      return !captureHashSet[stem]
+    })
     var merged = root.captures.concat(clips)
     merged.sort(function(a, b) { return a.mtime - b.mtime })
     // The folders are rescanned every few seconds; handing the line a new
