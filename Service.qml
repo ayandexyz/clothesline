@@ -362,12 +362,14 @@ Item {
     } catch (_) {}
 
     // Omarchy moves a copy back to the front of its history when you copy
-    // it again, even if it's one already here. Rank the old history first,
+    // it again, even if it's one already here. Rank by the persisted
+    // timestamps (not the in-memory history, which a restart would empty),
     // so a re-copy that jumped ahead of where it used to sit gets stamped
     // fresh instead of staying pinned to when it was first seen.
+    var oldIds = Object.keys(root.clipboardSeen)
+    oldIds.sort(function(a, b) { return root.clipboardSeen[b] - root.clipboardSeen[a] })
     var oldRank = {}
-    for (var o = 0; o < root.clipboardRaw.length; o++)
-      oldRank[root.clipId(root.clipboardRaw[o])] = o
+    for (var o = 0; o < oldIds.length; o++) oldRank[oldIds[o]] = o
     root.clipboardRaw = parsed
 
     var now = Date.now() / 1000
