@@ -19,10 +19,6 @@ Item {
 
   readonly property string dataHome: Quickshell.env("XDG_DATA_HOME") || root.homeDir + "/.local/share"
   readonly property string dataDir: dataHome + "/clothesline"
-  // Items removed from the line (but left in the clipboard history) go
-  // here, by id, so the next history reload doesn't bring one straight back.
-  property var dismissed: ({})
-  property bool prefsLoaded: false
 
   // Omarchy's clipboard plugin records every copy here (newest first), and
   // already leaves out what password managers mark as secret. The line only
@@ -143,11 +139,7 @@ Item {
 
   // --- the line's contents ---------------------------------------------------
 
-  function isDismissed(id) {
-    return root.dismissed[id] === true
-  }
-
-  function saveDismissed() {
+  function saveSeen() {
     mkdirProcess.running = true
   }
 
@@ -156,35 +148,18 @@ Item {
     command: ["mkdir", "-p", root.dataDir]
     onExited: function(exitCode) {
       if (exitCode !== 0) return
-      dismissedFile.setText(JSON.stringify(Object.keys(root.dismissed)) + "\n")
-      if (root.seenLoaded) seenFile.setText(JSON.stringify(root.clipboardSeen) + "\n")
+      seenFile.setText(JSON.stringify(root.clipboardSeen) + "\n")
     }
   }
 
-  /** Removes an item from the line without touching the clipboard history. */
-  function dismiss(id) {
-    var key = String(id || "")
-    if (!key || root.dismissed[key]) return
-    var next = {}
-    for (var existing in root.dismissed) next[existing] = true
-    next[key] = true
-    root.dismissed = next
-    root.clips = root.clips.filter(function(item) { return item.id !== key })
-    root.rebuild()
-    root.saveDismissed()
-  }
-
-  /** Lets a copy go for good: it leaves Omarchy's clipboard history too. */
+  // The only way an item leaves the line: it leaves Omarchy's clipboard
+  // history too, so the line and Super+Ctrl+V's panel never disagree about
+  // what's there.
   function trash(item) {
     if (!item) return
     root.removeFromHistory(item)
     root.clips = root.clips.filter(function(clip) { return clip.id !== item.id })
     root.rebuild()
-  }
-
-  function clearAll() {
-    var ids = root.items.map(function(item) { return item.id })
-    for (var i = 0; i < ids.length; i++) root.dismiss(ids[i])
   }
 
   // The line is just the clipboard's copies, in the order they arrived.
@@ -288,14 +263,14 @@ Item {
           ? { type: "image", path: String(entry.path), mime: String(entry.mime || "image/png") }
           : { type: "text", text: String(entry.text) }
       }
-      if (!root.isDismissed(id)) next.push(item)
+      next.push(item)
     }
 
     var changed = JSON.stringify(seen) !== JSON.stringify(root.clipboardSeen)
     root.clipboardSeen = seen
     root.clips = next
     root.rebuild()
-    if (changed) root.saveDismissed()
+    if (changed) root.saveSeen()
   }
 
   // Omarchy's clipboard plugin watches the same file and reloads it, so an
@@ -307,28 +282,6 @@ Item {
     if (next.length === root.clipboardRaw.length) return
     root.clipboardRaw = next
     clipboardFile.setText(JSON.stringify(next, null, 2) + "\n")
-  }
-
-  FileView {
-    id: dismissedFile
-    path: root.dataDir + "/dismissed.json"
-    printErrors: false
-    onLoaded: {
-      try {
-        var parsed = JSON.parse(text())
-        if (Array.isArray(parsed)) {
-          var next = {}
-          for (var i = 0; i < parsed.length; i++) next[String(parsed[i])] = true
-          root.dismissed = next
-        }
-      } catch (_) {}
-      root.prefsLoaded = true
-      root.refreshClipboard()
-    }
-    onLoadFailed: {
-      root.prefsLoaded = true
-      root.refreshClipboard()
-    }
   }
 
   FileView {
@@ -349,10 +302,10 @@ Item {
     }
   }
 
-  // Dismissals and first-seen times have to be in before the history is
-  // read, or every copy would look new and dismissed ones would flash back.
+  // First-seen times have to be in before the history is read, or every
+  // copy would look newly arrived and jump to the end of the line.
   function refreshClipboard() {
-    if (root.prefsLoaded && root.seenLoaded && clipboardFile.loaded) root.loadClipboard(clipboardFile.text())
+    if (root.seenLoaded && clipboardFile.loaded) root.loadClipboard(clipboardFile.text())
   }
 
   FileView {
@@ -362,7 +315,7 @@ Item {
     atomicWrites: true
     printErrors: false
     onLoaded: root.refreshClipboard()
-    onLoadFailed: if (root.prefsLoaded && root.seenLoaded) root.loadClipboard("[]")
+    onLoadFailed: if (root.seenLoaded) root.loadClipboard("[]")
     onFileChanged: reload()
   }
 

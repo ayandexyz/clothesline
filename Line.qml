@@ -710,7 +710,7 @@ PanelWindow {
                   anchors.fill: parent
                   hoverEnabled: true
                   cursorShape: Qt.PointingHandCursor
-                  onClicked: if (window.service) window.service.dismiss(peg.modelData.id)
+                  onClicked: if (window.service) window.service.trash(peg.modelData)
                 }
               }
             }

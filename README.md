@@ -25,7 +25,7 @@ clipboard of its own.
 | Click | Copy the item to the clipboard |
 | Double-click | Open it (image viewer, browser for links, editor for notes) |
 | Right-click | Annotate (images) / Reveal in files / Delete from history |
-| × | Take it off the line (stays in the clipboard history) |
+| × | Delete from history (same as right-click Delete) |
 
 Copies a password manager marks as secret never reach the clipboard history, so
 they never hang.
@@ -99,11 +99,10 @@ It reads `$XDG_STATE_HOME/omarchy/clipboard-history.json` — the same file
 Omarchy's own clipboard panel reads and writes — and only writes to it when
 you choose Delete from history, which removes the entry there too.
 
-Its only state of its own is in `$XDG_DATA_HOME/clothesline/`:
-`dismissed.json` lists what was taken off the line, so dismissing an item
-doesn't bring it right back the next time the history reloads, and
-`clipboard-seen.json` records when each copy was first seen, so copies sit on
-the line in the order they came.
+Its only state of its own is `$XDG_DATA_HOME/clothesline/clipboard-seen.json`,
+which records when each copy was first seen, so copies sit on the line in the
+order they came. There's nothing else to keep in sync: the line always shows
+exactly what's in Omarchy's history, nothing hidden on the side.
 
 No network access. No privileged commands.
 
