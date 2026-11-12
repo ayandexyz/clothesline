@@ -17,9 +17,6 @@ Item {
 
   readonly property string homeDir: Quickshell.env("HOME") || ""
 
-  readonly property string dataHome: Quickshell.env("XDG_DATA_HOME") || root.homeDir + "/.local/share"
-  readonly property string dataDir: dataHome + "/clothesline"
-
   // Omarchy's clipboard plugin records every copy here (newest first), and
   // already leaves out what password managers mark as secret. The line only
   // reads it, so nothing is captured twice.
@@ -28,17 +25,14 @@ Item {
   property string omarchyPath: Quickshell.env("OMARCHY_PATH") || "/usr/share/omarchy"
   readonly property string stateHome: Quickshell.env("XDG_STATE_HOME") || root.homeDir + "/.local/state"
   readonly property string clipboardHistoryPath: root.stateHome + "/omarchy/clipboard-history.json"
-  // The history has no times, so each copy is stamped when the line first
-  // sees it; that is what places it along the line.
-  property var clipboardSeen: ({})
-  property bool seenLoaded: false
 
   // 50 copies is what Omarchy's own clipboard panel shows.
   readonly property int maxCopies: 50
 
   /**
-   * Newest last: { id, path, name, kind: "image"|"note"|"link", mtime (epoch
-   * seconds), source: "clipboard" }. Each item also carries its history
+   * Newest last: { id, path, name, kind: "image"|"note"|"link", mtime
+   * (Omarchy's own history order, negated: 0, -1, -2, ... so the newest
+   * sorts last), source: "clipboard" }. Each item also carries its history
    * entry (text, mime) as `entry`.
    */
   property var items: []
@@ -139,19 +133,6 @@ Item {
 
   // --- the line's contents ---------------------------------------------------
 
-  function saveSeen() {
-    mkdirProcess.running = true
-  }
-
-  Process {
-    id: mkdirProcess
-    command: ["mkdir", "-p", root.dataDir]
-    onExited: function(exitCode) {
-      if (exitCode !== 0) return
-      seenFile.setText(JSON.stringify(root.clipboardSeen) + "\n")
-    }
-  }
-
   // The only way an item leaves the line: it leaves Omarchy's clipboard
   // history too, so the line and Super+Ctrl+V's panel never disagree about
   // what's there.
@@ -219,22 +200,14 @@ Item {
       var value = JSON.parse(String(raw || "[]"))
       if (Array.isArray(value)) parsed = value
     } catch (_) {}
-
-    // Omarchy moves a copy back to the front of its history when you copy
-    // it again, even if it's one already here. Rank by the persisted
-    // timestamps (not the in-memory history, which a restart would empty),
-    // so a re-copy that jumped ahead of where it used to sit gets stamped
-    // fresh instead of staying pinned to when it was first seen.
-    var oldIds = Object.keys(root.clipboardSeen)
-    oldIds.sort(function(a, b) { return root.clipboardSeen[b] - root.clipboardSeen[a] })
-    var oldRank = {}
-    for (var o = 0; o < oldIds.length; o++) oldRank[oldIds[o]] = o
     root.clipboardRaw = parsed
 
-    var now = Date.now() / 1000
-    var seen = {}
+    var seenIds = {}
     var next = []
-    // Only the newest copies could ever make it onto the line.
+    // Omarchy's history is already newest-first and reorders a re-copy to
+    // the front itself; mirror that order (index 0 = newest) exactly
+    // instead of guessing at recency with a timestamp of our own, so the
+    // line can never disagree with Omarchy's own panel about what's newest.
     for (var i = 0; i < parsed.length && next.length < root.maxCopies; i++) {
       var entry = parsed[i]
       if (!entry || typeof entry !== "object") continue
@@ -245,32 +218,25 @@ Item {
       if (!kind) continue
 
       var id = root.clipId(entry)
-      if (seen[id] !== undefined) continue
-      var recopied = oldRank[id] !== undefined && oldRank[id] > i
-      // Unseen (or re-copied) entries are stamped now, a hair apart so they
-      // keep the history's order among themselves.
-      seen[id] = (!recopied && root.clipboardSeen[id] !== undefined) ? root.clipboardSeen[id] : now - i * 0.001
+      if (seenIds[id]) continue
+      seenIds[id] = true
 
-      var item = {
+      next.push({
         id: id,
         path: kind === "image" ? String(entry.path) : "",
         name: kind === "image" ? String(entry.path).slice(String(entry.path).lastIndexOf("/") + 1) : "",
         kind: kind,
         flavor: kind === "note" ? root.noteFlavor(entry.text) : kind,
         source: "clipboard",
-        mtime: seen[id],
+        mtime: -i,
         entry: kind === "image"
           ? { type: "image", path: String(entry.path), mime: String(entry.mime || "image/png") }
           : { type: "text", text: String(entry.text) }
-      }
-      next.push(item)
+      })
     }
 
-    var changed = JSON.stringify(seen) !== JSON.stringify(root.clipboardSeen)
-    root.clipboardSeen = seen
     root.clips = next
     root.rebuild()
-    if (changed) root.saveSeen()
   }
 
   // Omarchy's clipboard plugin watches the same file and reloads it, so an
@@ -284,28 +250,8 @@ Item {
     clipboardFile.setText(JSON.stringify(next, null, 2) + "\n")
   }
 
-  FileView {
-    id: seenFile
-    path: root.dataDir + "/clipboard-seen.json"
-    printErrors: false
-    onLoaded: {
-      try {
-        var parsed = JSON.parse(text())
-        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) root.clipboardSeen = parsed
-      } catch (_) {}
-      root.seenLoaded = true
-      root.refreshClipboard()
-    }
-    onLoadFailed: {
-      root.seenLoaded = true
-      root.refreshClipboard()
-    }
-  }
-
-  // First-seen times have to be in before the history is read, or every
-  // copy would look newly arrived and jump to the end of the line.
   function refreshClipboard() {
-    if (root.seenLoaded && clipboardFile.loaded) root.loadClipboard(clipboardFile.text())
+    if (clipboardFile.loaded) root.loadClipboard(clipboardFile.text())
   }
 
   FileView {
@@ -315,7 +261,7 @@ Item {
     atomicWrites: true
     printErrors: false
     onLoaded: root.refreshClipboard()
-    onLoadFailed: if (root.seenLoaded) root.loadClipboard("[]")
+    onLoadFailed: root.loadClipboard("[]")
     onFileChanged: reload()
   }
 
