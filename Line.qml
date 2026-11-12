@@ -775,9 +775,14 @@ PanelWindow {
               anchors.fill: parent
               cursorShape: Qt.PointingHandCursor
               onClicked: {
+                // Clearing itemMenu.item rebuilds this Repeater (its model
+                // depends on it), destroying this very delegate mid-click;
+                // resolve everything needed before clearing, not after.
                 var item = itemMenu.item
+                var service = window.service
+                var action = modelData.action
                 itemMenu.item = null
-                if (item && window.service) modelData.action(item)
+                if (item && service) action(item)
               }
             }
           }
