@@ -63,9 +63,11 @@ PanelWindow {
   color: "transparent"
   WlrLayershell.namespace: "clothesline"
   WlrLayershell.layer: WlrLayer.Top
-  // Switching this while mapped remaps the surface, which clears the focus
-  // grab and lets a just-held line straight back up, so it stays None.
-  WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+  // Set once at startup and never toggled: switching this while mapped
+  // remaps the surface, which clears the focus grab and lets a just-held
+  // line straight back up. OnDemand only grants focus when keyCatcher below
+  // asks for it, so the line still ignores the keyboard the rest of the time.
+  WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
   // Kept clear of the bar's reserved edge, so the line hangs from its bottom
   // edge, without reserving any room of its own.
   exclusionMode: ExclusionMode.Normal
@@ -84,14 +86,28 @@ PanelWindow {
     window: window
   }
 
+  // What Escape and a click outside both do: close the menu, let a held
+  // line go.
+  function closeNow() {
+    itemMenu.item = null
+    if (window.service) window.service.releaseLine()
+  }
+
   // A click anywhere else lets a held line go.
   HyprlandFocusGrab {
     active: window.held || window.menuOpen
     windows: [window]
-    onCleared: {
-      itemMenu.item = null
-      if (window.service) window.service.releaseLine()
-    }
+    onActiveChanged: if (active) Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+    onCleared: window.closeNow()
+  }
+
+  // Only asks for keyboard focus while the grab above holds it, so Escape
+  // can close a held line or the right-click menu.
+  Item {
+    id: keyCatcher
+    anchors.fill: parent
+    focus: true
+    Keys.onEscapePressed: window.closeNow()
   }
 
   Timer {
